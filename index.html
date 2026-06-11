@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- Safari Web App iOS 專用優化標籤 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="MindBender">
+    
+    <title>絕對制約</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide 圖標 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Noto+Sans+TC:wght@300;400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background: radial-gradient(circle at center, #150817 0%, #030105 100%);
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .magic-title {
+            font-family: 'Cinzel', serif;
+        }
+
+        .card-pulse {
+            animation: pulse-border 2.5s infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.15); }
+            50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.45); }
+        }
+
+        /* 瞬停時的衝擊波特效 */
+        .impact-ring {
+            position: absolute;
+            border: 4px solid rgba(245, 158, 11, 0.8);
+            border-radius: 1rem;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 20;
+        }
+
+        .animate-impact {
+            animation: impact-shimmer 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes impact-shimmer {
+            0% {
+                transform: scale(0.95);
+                opacity: 1;
+                border-color: rgba(245, 158, 11, 0.9);
+            }
+            100% {
+                transform: scale(1.15);
+                opacity: 0;
+                border-color: rgba(239, 68, 68, 0);
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-gray-100 flex flex-col justify-between p-6 select-none relative">
+
+    <!-- 頂部防空區 (配合 iOS 瀏海排版) -->
+    <div class="h-6"></div>
+
+    <!-- 主要魔術表演區域 -->
+    <main class="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
+
+        <!-- 魔術指示與引導文字 -->
+        <div class="text-center mb-6 h-12 flex items-center justify-center">
+            <p id="magic-hint" class="text-xs tracking-widest text-gray-500 uppercase font-semibold transition-all duration-300"></p>
+        </div>
+
+        <!-- 撲克牌展示區域 -->
+        <div id="click-trigger-area" class="relative group cursor-pointer flex flex-col items-center justify-center">
+            
+            <!-- 卡牌後方的霓虹光暈 -->
+            <div id="card-glow" class="absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50"></div>
+
+            <!-- 卡牌外框容器 -->
+            <div id="card-outer" class="relative w-64 h-96 bg-neutral-900 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden">
+                
+                <!-- 內層雙槽卡牌滑動通道 (Safari 專用硬體加速) -->
+                <div id="card-content" class="w-full h-full relative bg-white rounded-2xl shadow-2xl overflow-hidden will-change-transform">
+                    
+                    <!-- 卡牌槽 A (目前展示中) -->
+                    <div id="slot-active" class="absolute inset-0 w-full h-full p-4 flex items-center justify-center translate-x-0 will-change-transform">
+                        <!-- 預設等待卡牌樣式 -->
+                        <div id="default-card-ui" class="w-full h-full flex flex-col items-center justify-center border-4 border-red-800 rounded-xl bg-neutral-950 p-2 relative overflow-hidden">
+                            <div class="absolute inset-0 opacity-15 bg-[radial-gradient(#900_1px,transparent_1px)] [background-size:12px_12px]"></div>
+                            <h2 class="text-red-500 font-extrabold tracking-widest text-2xl magic-title mb-4 animate-pulse">The Prediction</h2>
+                            <span class="text-gray-400 font-bold tracking-widest text-sm animate-bounce">TAP TO START</span>
+                        </div>
+                    </div>
+
+                    <!-- 卡牌槽 B (準備滑入中) -->
+                    <div id="slot-incoming" class="absolute inset-0 w-full h-full p-4 flex items-center justify-center translate-x-full will-change-transform">
+                    </div>
+
+                </div>
+
+                <!-- 衝擊波擴散特效層 -->
+                <div id="impact-wave" class="impact-ring"></div>
+            </div>
+        </div>
+
+        <!-- 按鈕控制區域 -->
+        <div class="mt-8 w-full px-4 flex justify-center">
+            <button id="action-btn" class="w-full py-4 px-8 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-lg rounded-xl shadow-[0_4px_20px_rgba(220,38,38,0.2)] transform active:scale-95 transition-all duration-150 tracking-widest">
+                開始
+            </button>
+        </div>
+
+    </main>
+
+    <!-- 底部防空區 -->
+    <div class="h-6"></div>
+
+    <!-- ================= 右下角隱密雙擊熱區 (僅在 Idle / Start 狀態生效) ================= -->
+    <div id="magic-hotspot" class="absolute bottom-0 right-0 w-24 h-24 opacity-0 z-50 cursor-default"></div>
+
+    <!-- ================= 魔術師機密後台設定面板 ================= -->
+    <div id="magician-modal" class="fixed inset-0 bg-black/95 backdrop-blur-lg flex items-center justify-center p-6 z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-neutral-900/80 border border-white/10 rounded-2xl w-full max-w-xs p-6 shadow-2xl relative">
+            
+            <div class="flex justify-between items-center pb-3 border-b border-white/10 mb-6">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="sliders" class="text-red-500"></i>
+                    <h3 class="text-base font-bold tracking-wider text-red-500">魔術師設定後台</h3>
+                </div>
+            </div>
+
+            <!-- 強迫牌自訂設定 -->
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">設定您的目標牌 (強迫卡)</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <!-- 花色選擇 -->
+                        <div>
+                            <span class="text-[11px] text-gray-500 block mb-1">花色 (Suit)</span>
+                            <select id="force-suit" class="w-full bg-neutral-950 border border-white/10 rounded-lg px-2 py-2.5 text-sm text-white focus:outline-none focus:border-red-500">
+                                <option value="H" selected>紅心 (♥)</option>
+                                <option value="D">方塊 (♦)</option>
+                                <option value="S">黑桃 (♠)</option>
+                                <option value="C">梅花 (♣)</option>
+                            </select>
+                        </div>
+                        <!-- 點數選擇 -->
+                        <div>
+                            <span class="text-[11px] text-gray-500 block mb-1">點數 (Value)</span>
+                            <select id="force-value" class="w-full bg-neutral-950 border border-white/10 rounded-lg px-2 py-2.5 text-sm text-white focus:outline-none focus:border-red-500">
+                                <option value="A">A</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6" selected>6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                                <option value="J">J</option>
+                                <option value="Q">Q</option>
+                                <option value="K">K</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 確定完成按鈕 -->
+                <button id="settings-save-btn" class="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold text-sm rounded-lg transition-all duration-150">
+                    確認並儲存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 背景微弱動態科技網格 -->
+    <div class="absolute inset-0 bg-[linear-gradient(to_right,#ffffff01_1px,transparent_1px),linear-gradient(to_bottom,#ffffff01_1px,transparent_1px)] bg-[size:50px_50px] pointer-events-none"></div>
+
+    <script>
+        lucide.createIcons();
+
+        // --- 全域變數與卡牌庫 ---
+        const suits = [
+            { code: 'H', char: '♥', color: 'text-red-600', name: '紅心', isRed: true },
+            { code: 'D', char: '♦', color: 'text-red-500', name: '方塊', isRed: true },
+            { code: 'S', char: '♠', color: 'text-neutral-900', name: '黑桃', isRed: false },
+            { code: 'C', char: '♣', color: 'text-neutral-800', name: '梅花', isRed: false }
+        ];
+
+        const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+        // 魔術運行狀態機
+        let state = {
+            stage: 'start', // 'start', 'guide1_rolling', 'guide1_stopped', 'guide2_rolling', 'guide2_stopped', 'audience_rolling', 'audience_stopped'
+            normalSpeed: 150, // 固定的 150 毫秒輪播
+            forceCard: { suit: 'H', value: '6' }, // 預設強制愛心 6
+            flashTimeout: null,
+            currentDisplayCard: null,
+            stopping: false,
+            isTransitioning: false,
+            deck: [] // 洗牌陣列
+        };
+
+        // --- DOM 節點獲取 ---
+        const cardOuter = document.getElementById('card-outer');
+        const cardContent = document.getElementById('card-content');
+        const slotActive = document.getElementById('slot-active');
+        const slotIncoming = document.getElementById('slot-incoming');
+        const actionBtn = document.getElementById('action-btn');
+        const clickTriggerArea = document.getElementById('click-trigger-area');
+        const defaultCardUi = document.getElementById('default-card-ui');
+        const cardGlow = document.getElementById('card-glow');
+        const impactWave = document.getElementById('impact-wave');
+        const magicHint = document.getElementById('magic-hint');
+
+        // 魔術師設定面板與隱形熱區
+        const magicHotspot = document.getElementById('magic-hotspot');
+        const magicianModal = document.getElementById('magician-modal');
+        const settingsSaveBtn = document.getElementById('settings-save-btn');
+        const forceSuitSelect = document.getElementById('force-suit');
+        const forceValueSelect = document.getElementById('force-value');
+
+        // --- 觸覺震動回饋 ---
+        function playTick() {
+            try {
+                if (window.navigator && window.navigator.vibrate) {
+                    window.navigator.vibrate(8);
+                }
+            } catch(e){}
+        }
+
+        function playHeavyTick() {
+            try {
+                if (window.navigator && window.navigator.vibrate) {
+                    window.navigator.vibrate([30, 40, 10]);
+                }
+            } catch(e){}
+        }
+
+        // --- STREAMING_CHUNK:Rendering vector card layouts... ---
+        // PNG 映射檔名路徑生成演算法
+        function getCardImagePath(suitCode, valueStr) {
+            const suitMap = { 'H': 'heart', 'D': 'diamond', 'S': 'spade', 'C': 'club' };
+            const valueMap = {
+                'A': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9', '10': '10',
+                'J': 'jack', 'Q': 'queen', 'K': 'king'
+            };
+            const mappedSuit = suitMap[suitCode];
+            const mappedValue = valueMap[valueStr];
+            return `./cards/${mappedSuit}_${mappedValue}.png`;
+        }
+
+        // HTML5 SVG 精美撲克牌備份渲染引擎 (用於本地圖片路徑 404 時自動防錯)
+        function generateCardSVG(suitCode, valueStr) {
+            const suitObj = suits.find(s => s.code === suitCode);
+            const suitChar = suitObj.char;
+            const isRed = suitObj.isRed;
+            const colorClass = isRed ? '#dc2626' : '#171717';
+            
+            let centerGraphics = '';
+            
+            if (['J', 'Q', 'K'].includes(valueStr)) {
+                const faceColor = isRed ? '#fef2f2' : '#f5f5f5';
+                const crownColor = '#d97706';
+                centerGraphics = `
+                    <rect x="45" y="65" width="110" height="150" rx="6" fill="none" stroke="${colorClass}" stroke-width="2" stroke-dasharray="3 3"/>
+                    <circle cx="100" cy="130" r="32" fill="${faceColor}" stroke="${colorClass}" stroke-width="2"/>
+                    <path d="M 85 112 L 90 122 L 100 112 L 110 122 L 115 112 L 112 130 L 88 130 Z" fill="${crownColor}"/>
+                    <text x="100" y="185" font-size="28" font-family="Cinzel, serif" fill="${colorClass}" text-anchor="middle" font-weight="bold">${valueStr}</text>
+                `;
+            } else if (valueStr === 'A') {
+                centerGraphics = `
+                    <text x="100" y="165" font-size="75" fill="${colorClass}" text-anchor="middle">${suitChar}</text>
+                `;
+            } else {
+                centerGraphics = `
+                    <text x="100" y="160" font-size="52" fill="${colorClass}" text-anchor="middle">${suitChar}</text>
+                `;
+            }
+
+            return `
+                <rect x="2" y="2" width="196" height="276" rx="12" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+                <g transform="translate(16, 14)">
+                    <text x="0" y="18" font-size="22" font-weight="900" font-family="sans-serif" fill="${colorClass}" text-anchor="middle">${valueStr}</text>
+                    <text x="0" y="34" font-size="15" fill="${colorClass}" text-anchor="middle">${suitChar}</text>
+                </g>
+                <g transform="translate(184, 266) rotate(180)">
+                    <text x="0" y="18" font-size="22" font-weight="900" font-family="sans-serif" fill="${colorClass}" text-anchor="middle">${valueStr}</text>
+                    <text x="0" y="34" font-size="15" fill="${colorClass}" text-anchor="middle">${suitChar}</text>
+                </g>
+                ${centerGraphics}
+            `;
+        }
+
+        // 前景渲染器：支援圖片與內嵌 SVG 備用切換，確保不拋出空指標
+        function generateCardHTML(suitCode, valueStr) {
+            const imgPath = getCardImagePath(suitCode, valueStr);
+            return `
+                <div class="w-full h-full p-4 bg-white rounded-2xl flex items-center justify-center select-none pointer-events-none relative">
+                    <img src="${imgPath}" alt="${suitCode}_${valueStr}" class="w-full h-full object-contain transition-transform duration-200" onerror="handleImageError(this, '${suitCode}', '${valueStr}')" />
+                </div>
+            `;
+        }
+
+        // 智慧 Fallback 機制：如偵測到無 ./cards/ 資料夾，直接線上動態轉換為精美 SVG
+        function handleImageError(imgEl, suitCode, valueStr) {
+            const svgMarkup = generateCardSVG(suitCode, valueStr);
+            const parent = imgEl.parentElement;
+            if (parent) {
+                parent.innerHTML = `
+                    <svg width="100%" height="100%" viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+                        ${svgMarkup}
+                    </svg>
+                `;
+            }
+        }
+
+        // --- 建立不重複洗牌機制（自動排除強迫牌） ---
+        function initAndShuffleDeck() {
+            state.deck = [];
+            suits.forEach(s => {
+                values.forEach(v => {
+                    // 自動過濾掉魔術師指定的強迫牌，防止測試期間穿幫
+                    if (s.code === state.forceCard.suit && v === state.forceCard.value) {
+                        return;
+                    }
+                    state.deck.push({ suit: s.code, value: v });
+                });
+            });
+
+            // Fisher-Yates 隨機洗牌法
+            for (let i = state.deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [state.deck[i], state.deck[j]] = [state.deck[j], state.deck[i]];
+            }
+        }
+
+        // 抽取下一張隨機牌
+        function drawNextCard() {
+            if (state.deck.length === 0) {
+                return null; // 牌組抽完了
+            }
+            return state.deck.pop();
+        }
+
+        // --- STREAMING_CHUNK:Handling state transitions... ---
+        // 雙槽 Safari 滑動切換動畫引擎 (完全使用 GPU Translate3d 加速)
+        function slideToNext(nextCardData, isFinal = false) {
+            if (state.isTransitioning) return;
+            state.isTransitioning = true;
+
+            // 1. 將新卡牌渲染至準備滑入的槽 B (slot-incoming)
+            slotIncoming.innerHTML = generateCardHTML(nextCardData.suit, nextCardData.value);
+
+            // 2. 計算滑動時間
+            const slideTime = Math.floor(state.normalSpeed * 0.85);
+            
+            const easeCurve = isFinal 
+                ? 'cubic-bezier(0.16, 1, 0.3, 1)' 
+                : 'cubic-bezier(0.25, 1, 0.5, 1)';
+
+            slotActive.style.transition = `transform ${slideTime}ms ${easeCurve}`;
+            slotIncoming.style.transition = `transform ${slideTime}ms ${easeCurve}`;
+
+            // 強制 Reflow
+            slotActive.offsetHeight;
+
+            // 3. 執行硬體加速滑動 (右進左出)
+            slotActive.style.transform = 'translate3d(-100%, 0, 0)';
+            slotIncoming.style.transform = 'translate3d(0, 0, 0)';
+
+            if (!isFinal) {
+                playTick();
+            }
+
+            // 4. 動畫結束後的無縫插槽重置
+            setTimeout(() => {
+                slotActive.innerHTML = slotIncoming.innerHTML;
+                
+                slotActive.style.transition = 'none';
+                slotIncoming.style.transition = 'none';
+
+                slotActive.style.transform = 'translate3d(0, 0, 0)';
+                slotIncoming.style.transform = 'translate3d(100%, 0, 0)';
+                
+                state.currentDisplayCard = nextCardData;
+                state.isTransitioning = false;
+            }, slideTime);
+        }
+
+        // 遞迴閃爍控制循環 (150ms 恆定間隔)
+        function runFlashLoop() {
+            const isRolling = state.stage === 'guide1_rolling' || state.stage === 'guide2_rolling' || state.stage === 'audience_rolling';
+            if (!isRolling) return;
+
+            // A. 如果按下「停！」
+            if (state.stopping) {
+                let targetCard;
+
+                if (state.stage === 'guide1_rolling' || state.stage === 'guide2_rolling') {
+                    // 引導階段：停在一張完全隨機的牌（不是強迫牌）
+                    targetCard = drawNextCard();
+                } else {
+                    // 觀眾階段：精準鎖定並停在強迫牌上！
+                    targetCard = state.forceCard;
+                }
+
+                if (!targetCard) {
+                    finalizeNoCardsLeft();
+                    return;
+                }
+
+                slideToNext(targetCard, true);
+                
+                const slideTime = Math.floor(state.normalSpeed * 0.85);
+                setTimeout(() => {
+                    finalizeStop();
+                }, slideTime + 20);
+                return;
+            }
+
+            // B. 正常隨機輪播
+            const nextCard = drawNextCard();
+            
+            // 如果一副牌輪完都沒有被點擊停止 (防呆)
+            if (!nextCard) {
+                finalizeNoCardsLeft();
+                return;
+            }
+
+            slideToNext(nextCard, false);
+
+            // 排程下一次滑動
+            state.flashTimeout = setTimeout(runFlashLoop, state.normalSpeed);
+        }
+
+        // 更新介面指示文字
+        function updateUIHints() {
+            switch (state.stage) {
+                case 'start':
+                    magicHint.innerText = "";
+                    break;
+                case 'guide1_rolling':
+                    magicHint.innerText = "魔術師示範：測試 (一)";
+                    break;
+                case 'guide1_stopped':
+                    magicHint.innerText = "測試成功：這次是一張隨機牌";
+                    break;
+                case 'guide2_rolling':
+                    magicHint.innerText = "魔術師示範：測試 (二)";
+                    break;
+                case 'guide2_stopped':
+                    magicHint.innerText = "測試成功：這依然是一張隨機牌";
+                    break;
+                case 'audience_rolling':
+                    magicHint.innerText = "正式開始：現在輪到觀眾點擊";
+                    break;
+                case 'audience_stopped':
+                    magicHint.innerText = "絕對制約完成！";
+                    break;
+            }
+        }
+
+        // --- 核心狀態機轉移控制 ---
+
+        // 1. 點擊開始或進入下個滾動
+        function handleActionClick() {
+            if (state.stage === 'start') {
+                // 開始第一次引導
+                state.stage = 'guide1_rolling';
+                startRollingSession();
+            } else if (state.stage === 'guide1_rolling') {
+                // 停止第一次引導
+                state.stopping = true;
+            } else if (state.stage === 'guide1_stopped') {
+                // 開始第二次引導
+                state.stage = 'guide2_rolling';
+                startRollingSession();
+            } else if (state.stage === 'guide2_rolling') {
+                // 停止第二次引導
+                state.stopping = true;
+            } else if (state.stage === 'guide2_stopped') {
+                // 開始觀眾關鍵階段
+                state.stage = 'audience_rolling';
+                startRollingSession();
+            } else if (state.stage === 'audience_rolling') {
+                // 觀眾點擊停止
+                state.stopping = true;
+            } else if (state.stage === 'audience_stopped') {
+                // 重新表演
+                resetApp();
+            }
+            updateUIHints();
+        }
+
+        // 開始某一階段的滾動
+        function startRollingSession() {
+            state.stopping = false;
+            state.isTransitioning = false;
+
+            // 重新初始化與清洗牌組
+            initAndShuffleDeck();
+
+            // 隱藏 ready 畫面
+            defaultCardUi.classList.add('hidden');
+            cardOuter.classList.add('scale-105');
+            cardGlow.className = "absolute w-72 h-[380px] bg-red-500/20 rounded-2xl blur-3xl opacity-100 transition-all duration-300";
+
+            // 改為停止按鈕狀態
+            actionBtn.innerText = "停！";
+            actionBtn.className = "w-full py-4 px-8 bg-gradient-to-r from-amber-500 to-yellow-600 text-neutral-900 font-bold text-lg rounded-xl shadow-[0_4px_20px_rgba(245,158,11,0.2)] transform active:scale-95 transition-all duration-150 tracking-widest scale-105";
+
+            // 隨機抽出一張填充第一幀
+            const firstCard = drawNextCard();
+            slotActive.innerHTML = generateCardHTML(firstCard.suit, firstCard.value);
+            state.currentDisplayCard = firstCard;
+
+            // 延遲一周期後開始遞迴滑動
+            state.flashTimeout = setTimeout(runFlashLoop, state.normalSpeed);
+        }
+
+        // 停止滾動後的結算
+        function finalizeStop() {
+            clearTimeout(state.flashTimeout);
+            playHeavyTick();
+
+            cardOuter.classList.remove('scale-105');
+
+            // 播放震撼的絕對瞬停衝擊波
+            impactWave.classList.remove('animate-impact');
+            void impactWave.offsetWidth; 
+            impactWave.classList.add('animate-impact');
+
+            if (state.stage === 'guide1_rolling') {
+                state.stage = 'guide1_stopped';
+                actionBtn.innerText = "第二次示範";
+                actionBtn.className = "w-full py-4 px-8 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-lg rounded-xl shadow-[0_4px_20px_rgba(220,38,38,0.2)] transform active:scale-95 transition-all duration-150 tracking-widest";
+            } else if (state.stage === 'guide2_rolling') {
+                state.stage = 'guide2_stopped';
+                actionBtn.innerText = "現在輪到你了";
+                actionBtn.className = "w-full py-4 px-8 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-lg rounded-xl shadow-[0_4px_20px_rgba(220,38,38,0.2)] transform active:scale-95 transition-all duration-150 tracking-widest";
+            } else if (state.stage === 'audience_rolling') {
+                state.stage = 'audience_stopped';
+                
+                // 讓觀眾的那張牌發光轉為尊貴的黃金光譜
+                cardGlow.className = "absolute w-72 h-[380px] bg-amber-500/35 rounded-2xl blur-3xl opacity-100 transition-all duration-300";
+                cardOuter.classList.add('border-amber-500/40');
+
+                actionBtn.innerText = "重新開始";
+                actionBtn.className = "w-full py-4 px-8 bg-neutral-800 hover:bg-neutral-700 text-gray-300 font-bold text-lg rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] transform active:scale-95 transition-all duration-150 tracking-widest";
+            }
+            updateUIHints();
+        }
+
+        // 安全網：萬一牌組抽乾
+        function finalizeNoCardsLeft() {
+            clearTimeout(state.flashTimeout);
+            playHeavyTick();
+            cardOuter.classList.remove('scale-105');
+
+            slotActive.innerHTML = `
+                <div class="w-full h-full flex flex-col items-center justify-center border-4 border-neutral-700 rounded-xl bg-neutral-900 p-2 relative overflow-hidden">
+                    <i data-lucide="refresh-cw" class="w-12 h-12 text-neutral-500 mb-3 animate-spin"></i>
+                    <span class="text-neutral-400 font-bold tracking-widest text-sm">請點擊重來</span>
+                </div>
+            `;
+            lucide.createIcons();
+
+            cardGlow.className = "absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50";
+            
+            state.stage = 'audience_stopped'; // 強制導向最後可重置狀態
+            actionBtn.innerText = "重新開始";
+            actionBtn.className = "w-full py-4 px-8 bg-neutral-800 hover:bg-neutral-700 text-gray-300 font-bold text-lg rounded-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] transform active:scale-95 transition-all duration-150 tracking-widest";
+            updateUIHints();
+        }
+
+        // 重置為一開始畫面 (The Prediction)
+        function resetApp() {
+            state.stage = 'start';
+            state.stopping = false;
+            state.isTransitioning = false;
+            clearTimeout(state.flashTimeout);
+            
+            // Slots 還原
+            slotActive.style.transition = 'none';
+            slotIncoming.style.transition = 'none';
+            slotActive.style.transform = 'translate3d(0, 0, 0)';
+            slotIncoming.style.transform = 'translate3d(100%, 0, 0)';
+
+            slotActive.innerHTML = '';
+            slotActive.appendChild(defaultCardUi);
+            slotIncoming.innerHTML = '';
+            defaultCardUi.classList.remove('hidden');
+
+            cardOuter.className = "relative w-64 h-96 bg-neutral-900 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
+            impactWave.classList.remove('animate-impact');
+            
+            actionBtn.className = "w-full py-4 px-8 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-bold text-lg rounded-xl shadow-[0_4px_20px_rgba(220,38,38,0.2)] transform active:scale-95 transition-all duration-150 tracking-widest";
+            actionBtn.innerText = "開始";
+            
+            cardGlow.className = "absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50";
+            updateUIHints();
+        }
+
+        // --- STREAMING_CHUNK:Binding UI touch gestures and setup... ---
+        // --- 互動事件處理 ---
+
+        // 主按鈕點擊
+        actionBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            handleActionClick();
+        });
+
+        // 點擊卡牌展示區觸發 (僅在滾動階段有效)
+        clickTriggerArea.addEventListener('click', (e) => {
+            const isRolling = state.stage === 'guide1_rolling' || state.stage === 'guide2_rolling' || state.stage === 'audience_rolling';
+            if (isRolling) {
+                state.stopping = true;
+            } else if (state.stage === 'start') {
+                handleActionClick();
+            }
+        });
+
+
+        // --- 魔術師秘密設定控制 (Safari 專屬雙擊熱區偵測) ---
+
+        let lastTap = 0;
+        
+        // 1. 手機 iOS 雙擊偵測
+        magicHotspot.addEventListener('touchend', (e) => {
+            if (state.stage !== 'start') return; // 僅在起始畫面允許喚出後台
+
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            
+            if (tapLength < 300 && tapLength > 0) {
+                e.preventDefault();
+                openMagicianModal();
+            }
+            lastTap = currentTime;
+        });
+
+        // 2. 桌面/筆電 Safari 雙擊偵測
+        magicHotspot.addEventListener('dblclick', (e) => {
+            if (state.stage !== 'start') return;
+            openMagicianModal();
+        });
+
+        // 開放後台
+        function openMagicianModal() {
+            magicianModal.classList.remove('hidden');
+            setTimeout(() => {
+                magicianModal.classList.add('opacity-100');
+            }, 10);
+            playHeavyTick();
+        }
+
+        // 關閉並儲存後台
+        settingsSaveBtn.addEventListener('click', () => {
+            state.forceCard.suit = forceSuitSelect.value;
+            state.forceCard.value = forceValueSelect.value;
+            
+            magicianModal.classList.remove('opacity-100');
+            setTimeout(() => {
+                magicianModal.classList.add('hidden');
+            }, 300);
+            
+            playTick();
+        });
+    </script>
+</body>
+</html>
