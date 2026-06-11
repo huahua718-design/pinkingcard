@@ -78,16 +78,16 @@
             <!-- 卡牌後方的霓虹光暈 -->
             <div id="card-glow" class="absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50"></div>
 
-            <!-- 卡牌外框容器 (黑深色底，溢出遮罩，左右滑入滑出) -->
-            <div id="card-outer" class="relative w-64 h-96 bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden">
+            <!-- 卡牌外框容器 (黃金比例：寬256px * 高358px，比例約為 1:1.40) -->
+            <div id="card-outer" class="relative w-64 h-[358px] bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden">
                 
-                <!-- 內層雙槽卡牌滑動通道 -->
+                <!-- 內層雙槽卡牌滑動通道 (完全透明底，交由卡牌 PNG 或備用 SVG 完美填滿) -->
                 <div id="card-content" class="w-full h-full relative rounded-2xl overflow-hidden will-change-transform bg-transparent">
                     
                     <!-- 卡牌槽 A (目前展示中) -->
-                    <div id="slot-active" class="absolute inset-0 w-full h-full flex items-center justify-center translate-x-0 will-change-transform">
-                        <!-- 預設開場 Ready 樣式 -->
-                        <div id="default-card-ui" class="w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] flex flex-col items-center justify-center border-[3px] border-red-950/80 rounded-xl bg-gradient-to-b from-neutral-950 via-red-950 to-neutral-950 p-4 relative overflow-hidden shadow-2xl">
+                    <div id="slot-active" class="absolute inset-0 w-full h-full flex items-center justify-center translate-x-0 will-change-transform p-0">
+                        <!-- 預設開場 Ready 樣式 (尺寸 100% 貼合，無縮放不對稱問題) -->
+                        <div id="default-card-ui" class="w-full h-full flex flex-col items-center justify-center border-[3px] border-red-950/80 rounded-2xl bg-gradient-to-b from-neutral-950 via-red-950 to-neutral-950 p-4 relative overflow-hidden shadow-2xl">
                             <div class="absolute inset-0 opacity-15 bg-[radial-gradient(#ff0000_1px,transparent_1px)] [background-size:12px_12px]"></div>
                             
                             <!-- 經典神秘卡背中央圖騰 -->
@@ -102,7 +102,7 @@
                     </div>
 
                     <!-- 卡牌槽 B (準備滑入中) -->
-                    <div id="slot-incoming" class="absolute inset-0 w-full h-full flex items-center justify-center translate-x-full will-change-transform">
+                    <div id="slot-incoming" class="absolute inset-0 w-full h-full flex items-center justify-center translate-x-full will-change-transform p-0">
                     </div>
 
                 </div>
@@ -202,7 +202,7 @@
             deck: []
         };
 
-        // 智慧型圖片載入與快取狀態紀錄器 (消除任何載入延遲閃爍)
+        // 智慧型圖片快取狀態
         const imageCache = {};
 
         // --- DOM 節點獲取 ---
@@ -264,7 +264,6 @@
                         checkProgress();
                     };
                     img.onerror = () => {
-                        // 如果本機檔案不存在，立刻標記為 failed，後續直接調用備份 SVG
                         imageCache[key] = { status: 'failed' };
                         checkProgress();
                     };
@@ -274,17 +273,14 @@
             function checkProgress() {
                 loadedCount++;
                 if (loadedCount === totalCards) {
-                    // 全數快取預判完成
                     preloaderStatusText.innerText = "tap to start";
                 } else {
-                    // 顯示載入進度 (隱密優雅)
                     const percent = Math.floor((loadedCount / totalCards) * 100);
                     preloaderStatusText.innerText = `READY ${percent}%`;
                 }
             }
         }
 
-        // 在 window 載入完成時立刻啟動預載
         window.addEventListener('load', () => {
             startPreloadingAllCards();
         });
@@ -333,15 +329,15 @@
             `;
         }
 
-        // --- 融合防護與零延遲 Fallback 渲染通道 ---
+        // --- 零邊界、完美 1:1.4 比例填充渲染通道 ---
         function generateCardImageHTML(suitCode, valueStr) {
             const key = `${suitCode}_${valueStr}`;
             const cacheItem = imageCache[key];
 
-            // 1. 如果預載已確定此卡圖片失效，直接在毫秒級渲染乾淨的備份 SVG，防止發送網路請求導致畫面空白閃爍
+            // 1. 如果預載已確定此卡圖片失效，直接在毫秒級渲染乾淨的備份 SVG
             if (cacheItem && cacheItem.status === 'failed') {
                 return `
-                    <div class="w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl shadow-lg flex items-center justify-center overflow-hidden border border-neutral-200/80">
+                    <div class="w-full h-full bg-white rounded-2xl shadow-lg flex items-center justify-center overflow-hidden">
                         ${generateCardSVG(suitCode, valueStr)}
                     </div>
                 `;
@@ -357,14 +353,14 @@
             if (valName === 'k') valName = 'king';
             const imgSrc = `./cards/${suitName}_${valName}.png`;
 
-            // 白色包裹框與極細灰邊，解決卡片與深色背景比例、融合問題
+            // 徹底移除外圍多餘的 bg-white padding 容器。
+            // 使用 object-fill 讓原本即為 1:1.4 的撲克牌圖片百分之百完美填滿 w-full h-full，
+            // 完美對齊 rounded-2xl 外框，解決上下白邊不一、雙重白邊以及融入背景的痛點！
             return `
-                <div class="w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl border border-neutral-200/80 shadow-lg p-1.5 flex items-center justify-center overflow-hidden">
-                    <img src="${imgSrc}" 
-                         alt="${suitCode}${valueStr}" 
-                         class="w-full h-full object-contain" 
-                         onerror="this.onerror=null; this.parentElement.outerHTML='<div class=\'w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl shadow-lg flex items-center justify-center overflow-hidden border border-neutral-200/80\'>' + generateCardSVG('${suitCode}', '${valueStr}') + '</div>'" />
-                </div>
+                <img src="${imgSrc}" 
+                     alt="${suitCode}${valueStr}" 
+                     class="w-full h-full object-fill rounded-2xl pointer-events-none select-none" 
+                     onerror="this.onerror=null; this.outerHTML=generateCardSVG('${suitCode}', '${valueStr}')" />
             `;
         }
 
@@ -552,11 +548,11 @@
                 state.status = 'idle';
                 startFlashing();
             } else if (state.phase === 3) {
-                // 連鎖預言算法更新強迫牌
+                // 連鎖預言
                 state.forceCard = calculateNextForceCard(state.forceCard);
                 state.status = 'idle';
                 
-                cardOuter.className = "relative w-64 h-96 bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
+                cardOuter.className = "relative w-64 h-[358px] bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
                 startFlashing();
             }
         }
@@ -581,7 +577,7 @@
             slotIncoming.innerHTML = '';
             defaultCardUi.classList.remove('hidden');
 
-            cardOuter.className = "relative w-64 h-96 bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
+            cardOuter.className = "relative w-64 h-[358px] bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
             impactWave.classList.remove('animate-impact');
             
             cardGlow.className = "absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50";
@@ -595,7 +591,7 @@
         });
 
 
-        // --- 魔術師秘密設定面板操作 (雙擊極右下角熱區) ---
+        // --- 魔術師秘密設定面板操作 ---
 
         let lastTap = 0;
         
