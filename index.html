@@ -38,7 +38,7 @@
             50% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.3); }
         }
 
-        /* 瞬停時的黃金與紫紅衝擊波特效 */
+        /* 瞬停時的黃金衝擊波特效 */
         .impact-ring {
             position: absolute;
             border: 5px solid rgba(245, 158, 11, 0.85);
@@ -78,10 +78,10 @@
             <!-- 卡牌後方的霓虹光暈 -->
             <div id="card-glow" class="absolute w-72 h-[380px] bg-red-600/5 rounded-2xl blur-3xl transition-all duration-1000 opacity-50"></div>
 
-            <!-- 卡牌外框容器 -->
+            <!-- 卡牌外框容器 (黑深色底，溢出遮罩，左右滑入滑出) -->
             <div id="card-outer" class="relative w-64 h-96 bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden">
                 
-                <!-- 內層雙槽卡牌滑動通道 (無白色底，由各卡片本身提供白底與立體邊框) -->
+                <!-- 內層雙槽卡牌滑動通道 -->
                 <div id="card-content" class="w-full h-full relative rounded-2xl overflow-hidden will-change-transform bg-transparent">
                     
                     <!-- 卡牌槽 A (目前展示中) -->
@@ -97,7 +97,7 @@
                             </div>
 
                             <h2 class="text-red-500 font-bold tracking-widest text-lg magic-title mb-1">The Prediction</h2>
-                            <p class="text-neutral-500 text-[9px] tracking-widest uppercase">tap to start</p>
+                            <p id="preloader-status-text" class="text-neutral-500 text-[9px] tracking-widest uppercase">tap to start</p>
                         </div>
                     </div>
 
@@ -190,21 +190,20 @@
         const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
         // 魔術引導流程狀態機
-        // Phase 0: Ready cardback
-        // Phase 1: Magician Guide 1 (Rolls, stops on random)
-        // Phase 2: Magician Guide 2 (Rolls, stops on random)
-        // Phase 3: Audience Turn (Rolls, stops on current force card, and generates next)
         let state = {
             phase: 0, 
             status: 'idle', // idle, flashing, finished
             normalSpeed: 150, // 固定的 150 毫秒高速輪播
-            forceCard: { suit: 'H', value: '6' }, // 預設首張強迫牌：紅心 6 (./cards/heart_6.png)
+            forceCard: { suit: 'H', value: '6' }, // 預設首張強迫牌：紅心 6
             flashTimeout: null,
             currentDisplayCard: null,
             stopping: false,
             isTransitioning: false,
-            deck: [] // 洗牌陣列 (滾動時排除當前強迫牌)
+            deck: []
         };
+
+        // 智慧型圖片載入與快取狀態紀錄器 (消除任何載入延遲閃爍)
+        const imageCache = {};
 
         // --- DOM 節點獲取 ---
         const cardOuter = document.getElementById('card-outer');
@@ -215,6 +214,7 @@
         const cardGlow = document.getElementById('card-glow');
         const impactWave = document.getElementById('impact-wave');
         const interactiveScreen = document.getElementById('interactive-screen');
+        const preloaderStatusText = document.getElementById('preloader-status-text');
 
         // 魔術師設定後台與隱密熱區
         const magicHotspot = document.getElementById('magic-hotspot');
@@ -240,7 +240,56 @@
             } catch(e){}
         }
 
-        // --- 備用 HTML5 SVG 渲染器 (本機無圖片時自動啟用) ---
+        // --- 背景智慧預載引擎 (在 Phase 0 時安靜載入所有圖片) ---
+        function startPreloadingAllCards() {
+            let loadedCount = 0;
+            const totalCards = 52;
+            
+            suits.forEach(s => {
+                values.forEach(v => {
+                    const suitName = s.engName;
+                    let valName = v.toLowerCase();
+                    if (valName === 'a') valName = '1';
+                    if (valName === 'j') valName = 'jack';
+                    if (valName === 'q') valName = 'queen';
+                    if (valName === 'k') valName = 'king';
+
+                    const key = `${s.code}_${v}`;
+                    const src = `./cards/${suitName}_${valName}.png`;
+                    
+                    const img = new Image();
+                    img.src = src;
+                    img.onload = () => {
+                        imageCache[key] = { status: 'success', src: src };
+                        checkProgress();
+                    };
+                    img.onerror = () => {
+                        // 如果本機檔案不存在，立刻標記為 failed，後續直接調用備份 SVG
+                        imageCache[key] = { status: 'failed' };
+                        checkProgress();
+                    };
+                });
+            });
+
+            function checkProgress() {
+                loadedCount++;
+                if (loadedCount === totalCards) {
+                    // 全數快取預判完成
+                    preloaderStatusText.innerText = "tap to start";
+                } else {
+                    // 顯示載入進度 (隱密優雅)
+                    const percent = Math.floor((loadedCount / totalCards) * 100);
+                    preloaderStatusText.innerText = `READY ${percent}%`;
+                }
+            }
+        }
+
+        // 在 window 載入完成時立刻啟動預載
+        window.addEventListener('load', () => {
+            startPreloadingAllCards();
+        });
+
+        // --- 備用 HTML5 SVG 渲染器 ---
         function generateCardSVG(suitCode, valueStr) {
             const suitObj = suits.find(s => s.code === suitCode);
             const suitChar = suitObj.char;
@@ -284,38 +333,47 @@
             `;
         }
 
-        // --- PNG 載入包裝與融合防護 ---
+        // --- 融合防護與零延遲 Fallback 渲染通道 ---
         function generateCardImageHTML(suitCode, valueStr) {
+            const key = `${suitCode}_${valueStr}`;
+            const cacheItem = imageCache[key];
+
+            // 1. 如果預載已確定此卡圖片失效，直接在毫秒級渲染乾淨的備份 SVG，防止發送網路請求導致畫面空白閃爍
+            if (cacheItem && cacheItem.status === 'failed') {
+                return `
+                    <div class="w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl shadow-lg flex items-center justify-center overflow-hidden border border-neutral-200/80">
+                        ${generateCardSVG(suitCode, valueStr)}
+                    </div>
+                `;
+            }
+
+            // 2. 如果預載成功，直接使用快取成功的圖片路徑
             const suitObj = suits.find(s => s.code === suitCode);
-            const suitName = suitObj.engName; // club, diamond, heart, spade
+            const suitName = suitObj.engName;
             let valName = valueStr.toLowerCase();
             if (valName === 'a') valName = '1';
             if (valName === 'j') valName = 'jack';
             if (valName === 'q') valName = 'queen';
             if (valName === 'k') valName = 'king';
-
             const imgSrc = `./cards/${suitName}_${valName}.png`;
 
-            // 精細外圍包裹框，配合內縮 p-1.5 與淺灰框線，徹底阻斷融入背景，並校正大小不一
+            // 白色包裹框與極細灰邊，解決卡片與深色背景比例、融合問題
             return `
                 <div class="w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl border border-neutral-200/80 shadow-lg p-1.5 flex items-center justify-center overflow-hidden">
                     <img src="${imgSrc}" 
                          alt="${suitCode}${valueStr}" 
                          class="w-full h-full object-contain" 
-                         onerror="this.onerror=null; this.parentElement.outerHTML='<div class=\'w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl shadow-lg flex items-center justify-center overflow-hidden\'>' + generateCardSVG('${suitCode}', '${valueStr}') + '</div>'" />
+                         onerror="this.onerror=null; this.parentElement.outerHTML='<div class=\'w-[calc(100%-1.5rem)] h-[calc(100%-1.5rem)] bg-white rounded-xl shadow-lg flex items-center justify-center overflow-hidden border border-neutral-200/80\'>' + generateCardSVG('${suitCode}', '${valueStr}') + '</div>'" />
                 </div>
             `;
         }
 
         // --- 核心：動態推算下一張強迫牌 ---
-        // 規則：花色順序：紅心(H) -> 黑桃(S) -> 方塊(D) -> 梅花(C)
-        // 數字：前一張點數加 5，若大於 13 則減 13
         function calculateNextForceCard(currentCard) {
             const suitCycle = ['H', 'S', 'D', 'C'];
             const currentSuitIndex = suitCycle.indexOf(currentCard.suit);
             const nextSuit = suitCycle[(currentSuitIndex + 1) % 4];
 
-            // 數值與點數對照表
             const valueMap = {
                 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
                 '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13
@@ -335,12 +393,11 @@
             return { suit: nextSuit, value: nextValue };
         }
 
-        // --- 不重複洗牌陣列初始化 (排除當前強迫牌) ---
+        // --- 不重複洗牌陣列初始化 ---
         function initAndShuffleDeck() {
             state.deck = [];
             suits.forEach(s => {
                 values.forEach(v => {
-                    // 永遠排除目前要強迫的牌，確保滾動過程中絕不提前曝光穿幫
                     if (s.code === state.forceCard.suit && v === state.forceCard.value) {
                         return;
                     }
@@ -348,7 +405,6 @@
                 });
             });
 
-            // Fisher-Yates 洗牌
             for (let i = state.deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [state.deck[i], state.deck[j]] = [state.deck[j], state.deck[i]];
@@ -358,23 +414,20 @@
         // 抽取下一張隨機牌
         function drawNextCard() {
             if (state.deck.length === 0) {
-                initAndShuffleDeck(); // 抽完自動重洗
+                initAndShuffleDeck();
             }
             return state.deck.pop();
         }
 
-        // --- 雙槽流暢硬體加速滑動切換 ---
+        // --- 雙槽硬體加速滑動切換 ---
         function slideToNext(nextCardData, isFinal = false) {
             if (state.isTransitioning) return;
             state.isTransitioning = true;
 
-            // 1. 將新卡牌載入至 Slot B (Incoming)
             slotIncoming.innerHTML = generateCardImageHTML(nextCardData.suit, nextCardData.value);
 
-            // 2. 計算滑動時間 (150ms 節奏)
             const slideTime = Math.floor(state.normalSpeed * 0.85);
             
-            // 點擊停止後的最後一次滑入 (isFinal) 使用物理煞車緩動曲線
             const easeCurve = isFinal 
                 ? 'cubic-bezier(0.16, 1, 0.3, 1)' 
                 : 'cubic-bezier(0.25, 1, 0.5, 1)';
@@ -382,9 +435,8 @@
             slotActive.style.transition = `transform ${slideTime}ms ${easeCurve}`;
             slotIncoming.style.transition = `transform ${slideTime}ms ${easeCurve}`;
 
-            slotActive.offsetHeight; // 強制瀏覽器 Reflow 重繪
+            slotActive.offsetHeight; // 強制重繪
 
-            // 3. 執行硬體加速滑動 (右進左出)
             slotActive.style.transform = 'translate3d(-100%, 0, 0)';
             slotIncoming.style.transform = 'translate3d(0, 0, 0)';
 
@@ -392,7 +444,6 @@
                 playTick();
             }
 
-            // 4. 動畫結束後的 Slot 重置與無縫接合
             setTimeout(() => {
                 slotActive.innerHTML = slotIncoming.innerHTML;
                 
@@ -411,13 +462,10 @@
         function runFlashLoop() {
             if (state.status !== 'flashing') return;
 
-            // A. 當觸發停止標記
             if (state.stopping) {
                 if (state.phase === 3) {
-                    // 第 3 階段（觀眾點擊）：絕對煞車在當前設定的強迫牌上！
                     slideToNext(state.forceCard, true);
                 } else {
-                    // 第 1、2 階段（引導測試階段）：隨機停在普通牌上
                     const finalRandomCard = drawNextCard();
                     slideToNext(finalRandomCard, true);
                 }
@@ -429,7 +477,6 @@
                 return;
             }
 
-            // B. 正常高速輪播
             const nextCard = drawNextCard();
             slideToNext(nextCard, false);
 
@@ -438,9 +485,7 @@
 
         // --- 點擊與流程切換控制中心 ---
 
-        // 全螢幕點擊核心路由
         function handleGlobalInteraction() {
-            // 如果魔術師設定面板正在顯示，則不予回應觸發
             if (!magicianModal.classList.contains('hidden')) return;
 
             if (state.status === 'idle') {
@@ -449,43 +494,35 @@
                 }
                 startFlashing();
             } else if (state.status === 'flashing') {
-                // 高速輪播中，直接暫停
                 triggerInstantStop();
             } else if (state.status === 'finished') {
-                // 定格展示中，前進至下一階段並直接開始輪播
                 proceedToNextPhase();
             }
         }
 
-        // 啟動高速滾動
         function startFlashing() {
             state.status = 'flashing';
             state.stopping = false;
             state.isTransitioning = false;
 
-            // 初始化洗牌陣列 (排除強迫牌)
             initAndShuffleDeck();
             
             defaultCardUi.classList.add('hidden');
             cardOuter.classList.add('scale-105');
             cardGlow.className = "absolute w-72 h-[380px] bg-red-500/20 rounded-2xl blur-3xl opacity-100 transition-all duration-300";
 
-            // 抽一張牌作為起始填充
             const startCard = drawNextCard();
             slotActive.innerHTML = generateCardImageHTML(startCard.suit, startCard.value);
             state.currentDisplayCard = startCard;
 
-            // 延遲一周期後開始輪播
             state.flashTimeout = setTimeout(runFlashLoop, state.normalSpeed);
         }
 
-        // 觸發暫停
         function triggerInstantStop() {
             if (state.status !== 'flashing' || state.stopping) return;
             state.stopping = true;
         }
 
-        // 煞車定格細節
         function finalizeMagicStop() {
             state.status = 'finished';
             clearTimeout(state.flashTimeout);
@@ -493,22 +530,18 @@
 
             cardOuter.classList.remove('scale-105');
             
-            // 播放瞬停衝擊波
             impactWave.classList.remove('animate-impact');
             void impactWave.offsetWidth; 
             impactWave.classList.add('animate-impact');
 
             if (state.phase === 3) {
-                // 觀眾關鍵點擊完成：爆發黃金預言光暈
                 cardGlow.className = "absolute w-72 h-[380px] bg-amber-500/35 rounded-2xl blur-3xl opacity-100 transition-all duration-300";
                 cardOuter.classList.add('border-amber-500/35');
             } else {
-                // 引導階段一、二
                 cardGlow.className = "absolute w-72 h-[380px] bg-red-600/15 rounded-2xl blur-3xl opacity-100 transition-all duration-300";
             }
         }
 
-        // 前往下一階段或繼續連鎖預言
         function proceedToNextPhase() {
             if (state.phase === 1) {
                 state.phase = 2;
@@ -519,17 +552,15 @@
                 state.status = 'idle';
                 startFlashing();
             } else if (state.phase === 3) {
-                // 核心連鎖設計：觀眾抽完卡後再次點擊螢幕，直接在 Phase 3 中無限算下一張強迫牌
+                // 連鎖預言算法更新強迫牌
                 state.forceCard = calculateNextForceCard(state.forceCard);
                 state.status = 'idle';
                 
-                // 重設卡牌外框為標準色，隱沒黃金光暈，隨後直接開啟新一輪的高速滾動
                 cardOuter.className = "relative w-64 h-96 bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden";
                 startFlashing();
             }
         }
 
-        // 重新初始化回到 Ready 畫面
         function resetApp() {
             state.phase = 0;
             state.status = 'idle';
@@ -537,7 +568,6 @@
             state.isTransitioning = false;
             clearTimeout(state.flashTimeout);
             
-            // 預設強迫牌重歸初始設定 (拉取目前選單上的值，或預設紅心 6)
             state.forceCard.suit = forceSuitSelect.value;
             state.forceCard.value = forceValueSelect.value;
 
@@ -560,17 +590,15 @@
 
         // --- 互動事件監聽 ---
 
-        // 全螢幕點擊事件 (避開設定選單本體)
-        interactiveScreen.addEventListener('click', (e) => {
+        interactiveScreen.addEventListener('click', () => {
             handleGlobalInteraction();
         });
 
 
-        // --- 魔術師秘密設定面板操作 (Safari iOS 雙擊極右下角熱區) ---
+        // --- 魔術師秘密設定面板操作 (雙擊極右下角熱區) ---
 
         let lastTap = 0;
         
-        // 1. 行動端觸控雙擊 (阻止冒泡，不觸發開跑)
         magicHotspot.addEventListener('touchend', (e) => {
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTap;
@@ -579,7 +607,6 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // 魔術師隨時可以雙擊右下角進行設定或一鍵重設回到 Phase 0 Ready
                 if (state.status === 'finished' || state.phase > 0) {
                     resetApp();
                     playHeavyTick();
@@ -590,7 +617,6 @@
             lastTap = currentTime;
         });
 
-        // 2. 桌面端滑鼠雙擊 (阻止冒泡，不觸發開跑)
         magicHotspot.addEventListener('dblclick', (e) => {
             e.stopPropagation();
             if (state.status === 'finished' || state.phase > 0) {
@@ -609,7 +635,6 @@
             playHeavyTick();
         }
 
-        // 確定完成設定，關閉後台 (阻止冒泡)
         settingsSaveBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             state.forceCard.suit = forceSuitSelect.value;
