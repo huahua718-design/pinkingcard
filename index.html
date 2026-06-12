@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -81,12 +80,12 @@
             <!-- 卡牌外框容器 (黃金比例：寬256px * 高358px，比例約為 1:1.40) -->
             <div id="card-outer" class="relative w-64 h-[358px] bg-neutral-950/90 border border-white/10 rounded-2xl card-pulse flex items-center justify-center transition-all duration-300 overflow-hidden">
                 
-                <!-- 內層雙槽卡牌滑動通道 (完全透明底，交由卡牌 PNG 或備用 SVG 完美填滿) -->
+                <!-- 內層雙槽卡牌滑動通道 -->
                 <div id="card-content" class="w-full h-full relative rounded-2xl overflow-hidden will-change-transform bg-transparent">
                     
                     <!-- 卡牌槽 A (目前展示中) -->
                     <div id="slot-active" class="absolute inset-0 w-full h-full flex items-center justify-center translate-x-0 will-change-transform p-0">
-                        <!-- 預設開場 Ready 樣式 (尺寸 100% 貼合，無縮放不對稱問題) -->
+                        <!-- 預設開場 Ready 樣式 -->
                         <div id="default-card-ui" class="w-full h-full flex flex-col items-center justify-center border-[3px] border-red-950/80 rounded-2xl bg-gradient-to-b from-neutral-950 via-red-950 to-neutral-950 p-4 relative overflow-hidden shadow-2xl">
                             <div class="absolute inset-0 opacity-15 bg-[radial-gradient(#ff0000_1px,transparent_1px)] [background-size:12px_12px]"></div>
                             
@@ -114,7 +113,7 @@
 
     </main>
 
-    <!-- ================= 右下角極隱密雙擊設定熱區 (在 Phase 0 或 Finished 狀態生效) ================= -->
+    <!-- ================= 右下角極隱密長按設定與重設熱區 ================= -->
     <div id="magic-hotspot" class="absolute bottom-0 right-0 w-24 h-24 opacity-0 z-50 cursor-default"></div>
 
     <!-- ================= 魔術師設定後台面版 (全螢幕暗黑玻璃彈窗) ================= -->
@@ -193,7 +192,7 @@
         let state = {
             phase: 0, 
             status: 'idle', // idle, flashing, finished
-            normalSpeed: 150, // 固定的 150 毫秒高速輪播
+            normalSpeed: 180, // 固定的 180 毫秒高速輪播
             forceCard: { suit: 'H', value: '6' }, // 預設首張強迫牌：紅心 6
             flashTimeout: null,
             currentDisplayCard: null,
@@ -334,7 +333,7 @@
             const key = `${suitCode}_${valueStr}`;
             const cacheItem = imageCache[key];
 
-            // 1. 如果預載已確定此卡圖片失效，直接在毫秒級渲染乾淨的備份 SVG
+            // 1. 如果預載已確定此卡圖片失效，直接在毫秒級渲染備用 SVG
             if (cacheItem && cacheItem.status === 'failed') {
                 return `
                     <div class="w-full h-full bg-white rounded-2xl shadow-lg flex items-center justify-center overflow-hidden">
@@ -353,9 +352,7 @@
             if (valName === 'k') valName = 'king';
             const imgSrc = `./cards/${suitName}_${valName}.png`;
 
-            // 徹底移除外圍多餘的 bg-white padding 容器。
-            // 使用 object-fill 讓原本即為 1:1.4 的撲克牌圖片百分之百完美填滿 w-full h-full，
-            // 完美對齊 rounded-2xl 外框，解決上下白邊不一、雙重白邊以及融入背景的痛點！
+            // 用 object-fill 讓撲克牌圖片百分之百完美填滿 w-full h-full
             return `
                 <img src="${imgSrc}" 
                      alt="${suitCode}${valueStr}" 
@@ -454,7 +451,7 @@
             }, slideTime);
         }
 
-        // --- 遞迴輪播控制機制 (150ms 恆定周期) ---
+        // --- 遞迴輪播控制機制 (180ms 恆定周期) ---
         function runFlashLoop() {
             if (state.status !== 'flashing') return;
 
@@ -591,36 +588,61 @@
         });
 
 
-        // --- 魔術師秘密設定面板操作 ---
+        // --- 魔術師秘密設定面板操作 (長按極右下角熱區) ---
 
-        let lastTap = 0;
-        
-        magicHotspot.addEventListener('touchend', (e) => {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTap;
-            
-            if (tapLength < 300 && tapLength > 0) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                if (state.status === 'finished' || state.phase > 0) {
-                    resetApp();
-                    playHeavyTick();
-                } else {
+        let pressTimer = null;
+        const PRESS_DURATION = 1000; // 1秒長按
+
+        function startPress() {
+            if (pressTimer) clearTimeout(pressTimer);
+            pressTimer = setTimeout(() => {
+                playHeavyTick();
+                if (state.phase === 0 && state.status === 'idle') {
                     openMagicianModal();
+                } else {
+                    resetApp();
                 }
+                pressTimer = null;
+            }, PRESS_DURATION);
+        }
+
+        function cancelPress() {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
             }
-            lastTap = currentTime;
+        }
+
+        // 行動端長按觸控事件
+        magicHotspot.addEventListener('touchstart', (e) => {
+            e.stopPropagation(); // 阻止冒泡到全螢幕點擊（防止啟動卡片）
+            startPress();
+        }, { passive: true });
+
+        magicHotspot.addEventListener('touchend', (e) => {
+            e.stopPropagation();
+            cancelPress();
         });
 
-        magicHotspot.addEventListener('dblclick', (e) => {
+        magicHotspot.addEventListener('touchmove', () => {
+            cancelPress();
+        }, { passive: true });
+
+        // 桌面端滑鼠長按事件
+        magicHotspot.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            if (state.status === 'finished' || state.phase > 0) {
-                resetApp();
-                playHeavyTick();
-            } else {
-                openMagicianModal();
+            if (e.button === 0) { // 僅限滑鼠左鍵
+                startPress();
             }
+        });
+
+        magicHotspot.addEventListener('mouseup', (e) => {
+            e.stopPropagation();
+            cancelPress();
+        });
+
+        magicHotspot.addEventListener('mouseleave', () => {
+            cancelPress();
         });
 
         function openMagicianModal() {
@@ -628,7 +650,6 @@
             setTimeout(() => {
                 magicianModal.classList.add('opacity-100');
             }, 10);
-            playHeavyTick();
         }
 
         settingsSaveBtn.addEventListener('click', (e) => {
