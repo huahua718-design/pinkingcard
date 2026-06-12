@@ -209,12 +209,35 @@
 
         const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
+        // 月份對應數字 (1月=A, 2月=2... 12月=Q)
+        // 日期除以4，餘1梅花(C)、餘2方塊/紅磚(D)、餘3紅心(H)、整除(餘0)黑桃(S)
+        function getTodayForceCard() {
+            const today = new Date();
+            const monthIndex = today.getMonth(); // 0 = 1月, 11 = 12月
+            const date = today.getDate();
+            
+            const valueMap = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+            const initialValue = valueMap[monthIndex] || '6';
+
+            const remainder = date % 4;
+            let initialSuit = 'S'; // 預設整除為黑桃 (♠)
+            if (remainder === 1) {
+                initialSuit = 'C'; // 梅花 (♣)
+            } else if (remainder === 2) {
+                initialSuit = 'D'; // 方塊/紅磚 (♦)
+            } else if (remainder === 3) {
+                initialSuit = 'H'; // 紅心 (♥)
+            }
+
+            return { suit: initialSuit, value: initialValue };
+        }
+
         // 魔術引導流程狀態機 (220ms 恆定間隔)
         let state = {
             phase: 0, 
             status: 'idle', // idle, flashing, finished
             normalSpeed: 220, // 完美的 220 毫秒高速輪播
-            forceCard: { suit: 'H', value: '6' }, // 預設首張強迫牌：紅心 6
+            forceCard: getTodayForceCard(), // 動態設定當天初始強迫牌
             flashTimeout: null,
             currentDisplayCard: null,
             stopping: false,
@@ -306,6 +329,12 @@
 
         window.addEventListener('load', () => {
             startPreloadingAllCards();
+            
+            // 讓魔術師後台下拉選單與當日動態初始強迫牌同步
+            if (forceSuitSelect && forceValueSelect) {
+                forceSuitSelect.value = state.forceCard.suit;
+                forceValueSelect.value = state.forceCard.value;
+            }
         });
 
         // --- 備用 HTML5 SVG 渲染器 ---
